@@ -41,7 +41,9 @@ jobs:
         run: |
           curl -fsSL -o plantuml.jar \
             "https://repo1.maven.org/maven2/net/sourceforge/plantuml/plantuml/${PLANTUML_VERSION}/plantuml-${PLANTUML_VERSION}.jar"
-          java -jar plantuml.jar -version
+          # -version проверяет наличие Graphviz и возвращает 16, если dot не найден.
+          # Graphviz здесь не нужен: ELK рендерит без него, а рендер защищён -failfast2.
+          java -DPLANTUML_LIMIT_SIZE=16384 -jar plantuml.jar -version || true
 
       - name: Generate Diagrams
         run: |
