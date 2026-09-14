@@ -1,0 +1,123 @@
+@startuml
+title MSA-NovaMarket Container Diagram
+
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+skinparam ArrowColor blue
+!pragma layout smetana
+
+Person_Ext(buyer, "Покупатель")
+
+System_Ext(seller_system, "Система Продавца") {
+    Person_Ext(seller, "Продавец")
+}
+
+System_Boundary(nova_market, "NovaMarket"){
+    Container(seller_service, "Сервис Продавцов")
+    ContainerDb(seller_service_db, "Продавцы DB", "PG")
+
+    Container(user_service, "Сервис Пользователей")
+    ContainerDb(user_service_db, "Пользователи DB", "PG")
+
+    Container(api_gateway, "API Gateway")
+    Container(proxy, "NGINX")
+    Container(mobile_app, "Мобильное Приложение")
+
+    Container(seller_notification_consumer, "Seller Notification Consumer")
+    Container(reservation_request_consumer, "Reservation Request Consumer")
+
+    System_Boundary(kafka_cluster, "Kafka Cluster") {
+        ContainerQueue(seller_notification_topic, "Топик seller_notification", "Kafka")
+        ContainerQueue(order_reservation_request_topic, "Топик order_notification_request", "Kafka")
+        ContainerQueue(order_reservation_response_topic, "Топик order_notification_response", "Kafka")
+    }
+
+    System_Boundary(authn_subsystem, "AuthN") {
+        Container(keycloak, "Keycloak")
+    }
+
+    System_Boundary(goods_subsystem, "Подсистема Товаров") {
+        Container(goods_service, "Сервис Товаров")
+        ContainerDb(goods_db, "Товары DB", "PG", "отзывы и другое")
+        ContainerDb(goods_document_db, "Товары Document DB", "MongoDB", "характеристики товаров")
+        ContainerDb(goods_cache, "Товары Cache", "Redis", "отзывы о товаре, топ 10 товаров из категории и прочее")
+        ContainerDb(goods_media, "Товары Media Storage", "S3", "фотографии, видео отзывы и прочее медиа")
+    }
+
+    System_Boundary(order_subsystem, "Подсистема оформления заказов") {
+        Container(order_service, "Сервис Оформление заказа")
+        ContainerDb(order_service_db, "Заказы DB", "PG")
+
+        Container(reservation_request_producer, "Reservation Request Producer")
+        Container(reservation_response_consumer, "Reservation Response Consumer")
+    }
+
+    System_Boundary(payment_subsystem, "Подсистема платежей") {
+        Container(payment_reservation_response_consumer, "Reservation Response Consumer")
+        Container(payment_db, "Платежи DB", "PG")
+    }
+
+    Container(logistic_client, "Logistic Client")
+    Container(logistic_client_cache, "Logistic Client Cache", "Redis")
+    Container(payment_client, "Payment Client")
+    Container(payment_client_cache, "Payment Client Cache", "Redis")
+
+    Container(shopping_cart_service, "Сервис Корзина")
+    ContainerDb(shopping_cart_db, "Корзина DB", "PG")
+}
+
+System_Ext(logistic_sys, "Логистический провайдер")
+System_Ext(payment_sys, "Платежная система")
+
+Rel(logistic_client, logistic_client_cache, "ближайшие пункты выдачи относительно адреса покупателя и прочее")
+Rel_L(order_service, logistic_client, "gRPC")
+Rel(logistic_client, logistic_sys, " ")
+
+Rel(payment_client, payment_client_cache, "способы оплаты")
+Rel_L(order_service, payment_client, "получение способов оплаты", "gRPC")
+Rel(payment_client, payment_sys, " ")
+
+Rel(order_service, goods_service, "gRPC")
+Rel(order_service, shopping_cart_service, "gRPC")
+Rel(order_service, order_service_db, " ")
+
+Rel(order_service, order_service_db, "transactional outbox (запись резервирования товара)")
+Rel(reservation_request_producer, order_service_db, "transactional outbox (чтение зарезервированного товара)")
+Rel(reservation_request_producer, order_reservation_request_topic, "публикует зарезервированные товары", "kafka")
+Rel(reservation_request_consumer, order_reservation_request_topic, "потребляет зарезервированные товары", "kafka")
+Rel(reservation_request_consumer, seller_system, "резервируем товар в системе продавца", "REST API")
+
+Rel(api_gateway, order_reservation_response_topic, "публикует подтверждение от продавца о резервировании", "Kafka")
+Rel(reservation_response_consumer, order_reservation_response_topic, "потребляет подтверждение от продавца о резервировании", "Kafka")
+Rel(payment_reservation_response_consumer, order_reservation_response_topic, "потребляет подтверждение от продавца о резервировании", "Kafka")
+
+Rel(seller_system, proxy, "CUD для товаров и цен", "REST API")
+Rel(seller_notification_consumer, seller_system, "информация для продавцов об интересах покупателей", "REST API")
+
+Rel(api_gateway, shopping_cart_service, "gRPC")
+Rel(shopping_cart_service, shopping_cart_db, " ")
+Rel(shopping_cart_service, goods_service, "gRPC")
+
+Rel(api_gateway, seller_service, "gRPC")
+Rel(seller_service, seller_service_db, " ")
+Rel(goods_service, seller_service, "gRPC")
+
+Rel(api_gateway, goods_service, "gRPC")
+Rel(user_service, keycloak, " ")
+BiRel(api_gateway, user_service, "gRPC", "authn")
+Rel(user_service, user_service_db, " ")
+Rel(goods_service, goods_db, " ")
+Rel(goods_service, goods_document_db, " ")
+Rel(goods_service, goods_cache, " ")
+Rel(goods_service, goods_media, " ")
+Rel(goods_service, seller_notification_topic, "публикует", "kafka")
+Rel(shopping_cart_service, seller_notification_topic, "публикует", "kafka")
+Rel(seller_notification_consumer, seller_notification_topic, "потребляет(интерес покупателей, добавленные товары в корзину)", "kafka")
+
+
+Rel(seller, mobile_app, " ")
+Rel(buyer, mobile_app, " ")
+Rel(mobile_app, proxy, " ")
+Rel(proxy, api_gateway, " ")
+
+@enduml
