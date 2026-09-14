@@ -4,7 +4,7 @@ title MSA-NovaMarket Container Diagram
 !include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
 
 skinparam ArrowColor blue
-!pragma layout smetana
+!pragma layout elk
 
 AddRelTag("rel_transactional_outbox", $textColor="#9933ff", $lineColor="#9933ff")
 
@@ -27,12 +27,12 @@ System_Boundary(nova_market, "NovaMarket"){
     Container(proxy, "NGINX")
     Container(mobile_app, "Мобильное Приложение")
 
-    System_Boundary(kafka_cluster, "Kafka Cluster") {
+    'System_Boundary(kafka_cluster, "Kafka Cluster") {
         ContainerQueue(seller_notification_topic, "Топик seller_notification", "Kafka", "уведомление об интересе к продукту продавца")
         ContainerQueue(order_reservation_request_topic, "Топик order_notification_request", "Kafka", "запрос продавцу на резервирование")
         ContainerQueue(order_reservation_response_topic, "Топик order_notification_response", "Kafka", "ответ продавца по резервированию")
         ContainerQueue(payment_result_request_topic, "Топик payment_result_request", "Kafka", "топик для коммуникации с логистикой и продавцами")
-    }
+    '}
 
     System_Boundary(seller_subsystem, "Подсистема Продавцы") {
         Container(seller_notification_consumer, "Seller Notification Consumer")
@@ -45,7 +45,7 @@ System_Boundary(nova_market, "NovaMarket"){
         Container(keycloak, "Keycloak")
     }
 
-    System_Boundary(goods_subsystem, "Подсистема Товаров") {
+    System_Boundary(goods_subsystem, "Подсистема Товары") {
         Container(goods_service, "Сервис Товаров")
         ContainerDb(goods_db, "Товары DB", "PG", "отзывы и другое")
         ContainerDb(goods_document_db, "Товары Document DB", "MongoDB", "характеристики товаров")
@@ -83,7 +83,7 @@ System_Boundary(nova_market, "NovaMarket"){
 System_Ext(logistic_sys, "Логистический провайдер")
 System_Ext(payment_sys, "Платежная система")
 
-Rel(payment_client, ws_handler, "передача payment url")
+Rel_L(payment_client, ws_handler, "передача payment url")
 Rel(ws_handler, mobile_app, "переход покупателя на payment url")
 Rel(mobile_app, payment_sys, "реквизиты и webhook(для обработки ответа в маркете)")
 Rel(payment_sys, proxy, "ответ по webhook")

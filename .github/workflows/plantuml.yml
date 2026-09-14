@@ -17,8 +17,11 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # C4-PlantUML requires PlantUML >= 1.2021 (%function_exists, %breakline).
-  PLANTUML_VERSION: '1.2024.8'
+  # Keep in sync with the jar configured in the IDE's PlantUML plugin, otherwise
+  # locally previewed and CI-committed diagrams drift apart.
+  # >= 1.2024.6 bundles ELK (`!pragma layout elk`) inside plantuml.jar, so no
+  # separate elk-full.jar or Graphviz install is needed. ELK needs Java >= 17.
+  PLANTUML_VERSION: '1.2026.2'
 
 jobs:
   generate-diagrams:
@@ -33,11 +36,6 @@ jobs:
         with:
           java-version: '17'
           distribution: 'temurin'
-
-      - name: Install Graphviz
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y graphviz
 
       - name: Download PlantUML
         run: |
@@ -57,7 +55,9 @@ jobs:
           echo "Rendering:"
           tr '\0' '\n' < puml.list
           # -charset UTF-8: диаграммы содержат кириллицу.
-          xargs -0 java -jar plantuml.jar -tpng -failfast2 -charset UTF-8 < puml.list
+          # PLANTUML_LIMIT_SIZE: без него PNG молча обрезается на 4096px по любой
+          # стороне, а контейнерная диаграмма уже шире.
+          xargs -0 java -DPLANTUML_LIMIT_SIZE=16384 -jar plantuml.jar -tpng -failfast2 -charset UTF-8 < puml.list
           rm -f puml.list
 
       - name: Upload Diagrams
