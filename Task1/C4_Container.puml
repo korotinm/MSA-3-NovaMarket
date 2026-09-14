@@ -27,16 +27,18 @@ System_Boundary(nova_market, "NovaMarket"){
     Container(proxy, "NGINX")
     Container(mobile_app, "Мобильное Приложение")
 
-    Container(seller_notification_consumer, "Seller Notification Consumer")
-    Container(reservation_request_consumer, "Reservation Request Consumer")
-
-    Container(seller_sys_client, "Seller Client")
-
     System_Boundary(kafka_cluster, "Kafka Cluster") {
         ContainerQueue(seller_notification_topic, "Топик seller_notification", "Kafka", "уведомление об интересе к продукту продавца")
         ContainerQueue(order_reservation_request_topic, "Топик order_notification_request", "Kafka", "запрос продавцу на резервирование")
         ContainerQueue(order_reservation_response_topic, "Топик order_notification_response", "Kafka", "ответ продавца по резервированию")
         ContainerQueue(payment_result_request_topic, "Топик payment_result_request", "Kafka", "топик для коммуникации с логистикой и продавцами")
+    }
+
+    System_Boundary(seller_subsystem, "Подсистема Продавцы") {
+        Container(seller_notification_consumer, "Seller Notification Consumer")
+        Container(seller_reservation_request_consumer, "Reservation Request Consumer")
+        Container(seller_sys_client, "Seller Client")
+        Container(seller_payment_result_consumer, "Payment Result Consumer")
     }
 
     System_Boundary(authn_subsystem, "AuthN") {
@@ -108,8 +110,10 @@ Rel(order_service, shopping_cart_service, "gRPC")
 Rel(order_service, order_service_db, "запись резервирования товаров + transactional outbox", $tags="rel_transactional_outbox")
 Rel(reservation_request_producer, order_service_db, "transactional outbox (чтение зарезервированных товаров)", $tags="rel_transactional_outbox")
 Rel(reservation_request_producer, order_reservation_request_topic, "публикует зарезервированные товары", "kafka", $tags="rel_transactional_outbox")
-Rel(reservation_request_consumer, order_reservation_request_topic, "потребляет зарезервированные товары", "kafka")
-Rel(reservation_request_consumer, seller_sys_client, "резервируем товар в системе продавца", "REST API")
+Rel(seller_reservation_request_consumer, order_reservation_request_topic, "потребляет зарезервированные товары", "kafka")
+Rel(seller_reservation_request_consumer, seller_sys_client, "резервируем товар в системе продавца", "REST API")
+Rel(seller_payment_result_consumer, payment_result_request_topic, "потребляет платежные результаты", "kafka")
+Rel(seller_payment_result_consumer, seller_sys_client, "уведомление продавцу об оплате")
 'Rel(seller_sys_client, seller_system, "резервируем товар в системе продавца", "REST API")
 
 Rel(api_gateway, order_reservation_response_topic, "публикует подтверждение от продавца о резервировании", "Kafka")
