@@ -3,6 +3,7 @@ title MSA-NovaMarket Container Diagram
 
 !include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
 
+skinparam defaultFontName Arial
 skinparam ArrowColor blue
 !pragma layout elk
 
@@ -83,7 +84,7 @@ System_Boundary(nova_market, "NovaMarket"){
 System_Ext(logistic_sys, "Логистический провайдер")
 System_Ext(payment_sys, "Платежная система")
 
-Rel_L(payment_client, ws_handler, "передача payment url")
+Rel_L(payment_client, ws_handler, "передача payment url в мобильное приложение")
 Rel(ws_handler, mobile_app, "переход покупателя на payment url")
 Rel(mobile_app, payment_sys, "реквизиты и webhook(для обработки ответа в маркете)")
 Rel(payment_sys, proxy, "ответ по webhook")
