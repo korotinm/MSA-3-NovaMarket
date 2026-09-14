@@ -6,6 +6,8 @@ title MSA-NovaMarket Container Diagram
 skinparam ArrowColor blue
 !pragma layout smetana
 
+AddRelTag("rel_transactional_outbox", $textColor="#9933ff", $lineColor="#9933ff")
+
 Person_Ext(buyer, "Покупатель")
 
 System_Ext(seller_system, "Система Продавца") {
@@ -13,6 +15,8 @@ System_Ext(seller_system, "Система Продавца") {
 }
 
 System_Boundary(nova_market, "NovaMarket"){
+    Container(ws_handler, "WebSocket Handler")
+
     Container(seller_service, "Сервис Продавцов")
     ContainerDb(seller_service_db, "Продавцы DB", "PG")
 
@@ -26,10 +30,13 @@ System_Boundary(nova_market, "NovaMarket"){
     Container(seller_notification_consumer, "Seller Notification Consumer")
     Container(reservation_request_consumer, "Reservation Request Consumer")
 
+    Container(seller_sys_client, "Seller Client")
+
     System_Boundary(kafka_cluster, "Kafka Cluster") {
-        ContainerQueue(seller_notification_topic, "Топик seller_notification", "Kafka")
-        ContainerQueue(order_reservation_request_topic, "Топик order_notification_request", "Kafka")
-        ContainerQueue(order_reservation_response_topic, "Топик order_notification_response", "Kafka")
+        ContainerQueue(seller_notification_topic, "Топик seller_notification", "Kafka", "уведомление об интересе к продукту продавца")
+        ContainerQueue(order_reservation_request_topic, "Топик order_notification_request", "Kafka", "запрос продавцу на резервирование")
+        ContainerQueue(order_reservation_response_topic, "Топик order_notification_response", "Kafka", "ответ продавца по резервированию")
+        ContainerQueue(payment_result_request_topic, "Топик payment_result_request", "Kafka", "топик для коммуникации с логистикой и продавцами")
     }
 
     System_Boundary(authn_subsystem, "AuthN") {
@@ -48,19 +55,24 @@ System_Boundary(nova_market, "NovaMarket"){
         Container(order_service, "Сервис Оформление заказа")
         ContainerDb(order_service_db, "Заказы DB", "PG")
 
-        Container(reservation_request_producer, "Reservation Request Producer")
-        Container(reservation_response_consumer, "Reservation Response Consumer")
+        Container(reservation_request_producer, "Debezium Pg Connector")
+        'Container(reservation_response_consumer, "Reservation Response Consumer")
     }
 
     System_Boundary(payment_subsystem, "Подсистема платежей") {
         Container(payment_reservation_response_consumer, "Reservation Response Consumer")
-        Container(payment_db, "Платежи DB", "PG")
+        Container(payment_client, "Payment Client")
+        Container(payment_client_cache, "Payment Client Cache", "Redis")
+        Container(payment_service, "Payment Service")
+        Container(payment_request_producer, "Debezium Pg Connector")
+        Container(payment_service_db, "Платежи DB", "PG")
     }
 
-    Container(logistic_client, "Logistic Client")
-    Container(logistic_client_cache, "Logistic Client Cache", "Redis")
-    Container(payment_client, "Payment Client")
-    Container(payment_client_cache, "Payment Client Cache", "Redis")
+    System_Boundary(logistic_subsystem, "Логистическая подсистема") {
+        Container(logistic_client, "Logistic Client")
+        Container(logistic_client_cache, "Logistic Client Cache", "Redis")
+        Container(logistic_payment_result_consumer, "Payment Result Consumer")
+    }
 
     Container(shopping_cart_service, "Сервис Корзина")
     ContainerDb(shopping_cart_db, "Корзина DB", "PG")
@@ -69,34 +81,50 @@ System_Boundary(nova_market, "NovaMarket"){
 System_Ext(logistic_sys, "Логистический провайдер")
 System_Ext(payment_sys, "Платежная система")
 
+Rel(payment_client, ws_handler, "передача payment url")
+Rel(ws_handler, mobile_app, "переход покупателя на payment url")
+Rel(mobile_app, payment_sys, "реквизиты и webhook(для обработки ответа в маркете)")
+Rel(payment_sys, proxy, "ответ по webhook")
+Rel(payment_service, payment_service_db, "записываем результат оплаты + transactional outbox", $tags="rel_transactional_outbox")
+Rel(payment_request_producer, payment_service_db, "transactional outbox(потребляет результат оплаты)", $tags="rel_transactional_outbox")
+Rel(payment_request_producer, payment_result_request_topic, "публикует ответ от платежной системы", $tags="rel_transactional_outbox")
+
+Rel(payment_reservation_response_consumer, payment_client, "после резервирования на стороне продавца - переходим к оплате")
+
+Rel(logistic_payment_result_consumer, payment_result_request_topic, "потребляет платежные результаты", "kafka")
+Rel(logistic_payment_result_consumer, logistic_client, "заявка на доставку")
 Rel(logistic_client, logistic_client_cache, "ближайшие пункты выдачи относительно адреса покупателя и прочее")
-Rel_L(order_service, logistic_client, "gRPC")
+Rel(order_service, logistic_client, "gRPC")
 Rel(logistic_client, logistic_sys, " ")
 
 Rel(payment_client, payment_client_cache, "способы оплаты")
-Rel_L(order_service, payment_client, "получение способов оплаты", "gRPC")
-Rel(payment_client, payment_sys, " ")
+Rel(order_service, payment_client, "получение способов оплаты", "gRPC")
+Rel(payment_client, payment_sys, "запрос Payment URL")
 
 Rel(order_service, goods_service, "gRPC")
 Rel(order_service, shopping_cart_service, "gRPC")
-Rel(order_service, order_service_db, " ")
+'Rel(order_service, order_service_db, " ")
 
-Rel(order_service, order_service_db, "transactional outbox (запись резервирования товара)")
-Rel(reservation_request_producer, order_service_db, "transactional outbox (чтение зарезервированного товара)")
-Rel(reservation_request_producer, order_reservation_request_topic, "публикует зарезервированные товары", "kafka")
+Rel(order_service, order_service_db, "запись резервирования товаров + transactional outbox", $tags="rel_transactional_outbox")
+Rel(reservation_request_producer, order_service_db, "transactional outbox (чтение зарезервированных товаров)", $tags="rel_transactional_outbox")
+Rel(reservation_request_producer, order_reservation_request_topic, "публикует зарезервированные товары", "kafka", $tags="rel_transactional_outbox")
 Rel(reservation_request_consumer, order_reservation_request_topic, "потребляет зарезервированные товары", "kafka")
-Rel(reservation_request_consumer, seller_system, "резервируем товар в системе продавца", "REST API")
+Rel(reservation_request_consumer, seller_sys_client, "резервируем товар в системе продавца", "REST API")
+'Rel(seller_sys_client, seller_system, "резервируем товар в системе продавца", "REST API")
 
 Rel(api_gateway, order_reservation_response_topic, "публикует подтверждение от продавца о резервировании", "Kafka")
-Rel(reservation_response_consumer, order_reservation_response_topic, "потребляет подтверждение от продавца о резервировании", "Kafka")
+'Rel(reservation_response_consumer, order_reservation_response_topic, "потребляет подтверждение от продавца о резервировании", "Kafka")
 Rel(payment_reservation_response_consumer, order_reservation_response_topic, "потребляет подтверждение от продавца о резервировании", "Kafka")
 
 Rel(seller_system, proxy, "CUD для товаров и цен", "REST API")
-Rel(seller_notification_consumer, seller_system, "информация для продавцов об интересах покупателей", "REST API")
+Rel(seller_notification_consumer, seller_sys_client, "информация для продавцов об интересах покупателей", "REST API")
+Rel(seller_sys_client, seller_system, "seller client request")
 
-Rel(api_gateway, shopping_cart_service, "gRPC")
+Rel(api_gateway, payment_service, "ответ от платежной системы по webhook", "gRPC")
+Rel(api_gateway, order_service, "оформить заказ", "gRPC")
+Rel(api_gateway, shopping_cart_service, "добавить в корзину", "gRPC")
 Rel(shopping_cart_service, shopping_cart_db, " ")
-Rel(shopping_cart_service, goods_service, "gRPC")
+Rel(shopping_cart_service, goods_service, "поиск/просмотр товаров", "gRPC")
 
 Rel(api_gateway, seller_service, "gRPC")
 Rel(seller_service, seller_service_db, " ")
