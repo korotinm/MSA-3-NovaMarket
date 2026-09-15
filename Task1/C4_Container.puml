@@ -78,8 +78,8 @@ System_Ext(logistic_sys, "Логистический провайдер")
 System_Ext(payment_sys, "Платежная система")
 
 Rel(logistic_service, logistic_service_db, "запись информации по доставки, например трек-номер")
-Rel(logistic_sys, proxy, "информирование о присвоении трек-номера")
-Rel(api_gateway, logistic_service, "информирование о присвоении трек-номера")
+Rel(logistic_sys, proxy, "информация от логистического рповайдера")
+Rel(api_gateway, logistic_service, "информирование о присвоении трек-номера или смене статуса доставки")
 
 Rel_L(payment_client, ws_handler, "передача payment url в мобильное приложение")
 Rel(ws_handler, mobile_app, "сообщения от NovaMarket")
