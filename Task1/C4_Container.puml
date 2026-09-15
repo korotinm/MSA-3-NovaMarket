@@ -63,6 +63,8 @@ System_Boundary(nova_market, "NovaMarket"){
     }
 
     System_Boundary(logistic_subsystem, "Логистическая подсистема") {
+        Container(logistic_service, "Logistic Service")
+        Container(logistic_service_db, "Logistic Service DB", "PG")
         Container(logistic_client, "Logistic Client")
         Container(logistic_client_cache, "Logistic Client Cache", "Redis")
         Container(logistic_payment_result_consumer, "Payment Result Consumer")
@@ -74,6 +76,10 @@ System_Boundary(nova_market, "NovaMarket"){
 
 System_Ext(logistic_sys, "Логистический провайдер")
 System_Ext(payment_sys, "Платежная система")
+
+Rel(logistic_service, logistic_service_db, "запись информации по доставки, например трек-номер")
+Rel(logistic_sys, proxy, "информирование о присвоении трек-номера")
+Rel(api_gateway, logistic_service, "информирование о присвоении трек-номера")
 
 Rel_L(payment_client, ws_handler, "передача payment url в мобильное приложение")
 Rel(ws_handler, mobile_app, "сообщения от NovaMarket")
