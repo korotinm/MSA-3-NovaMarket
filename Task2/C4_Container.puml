@@ -76,6 +76,10 @@ System_Boundary(nova_market, "NovaMarket"){
     }
 
     System_Boundary(purchase_history_subsystem, "Подсистема История покупок") {
+        Container(purchase_history_kafka_stream, "Аггрегатор Истории покупок", "Kafka Stream")
+        ContainerDb(purchase_history_service, "Сервис История Покупок", "объединяет данные нескольких топиков для формирования истории")
+        ContainerDb(purchase_history_db, "История Покупок DB", "PG")
+        ContainerDb(purchase_history_cache, "История Покупок Cache", "Redis")
     }
 
     Container(shopping_cart_service, "Сервис Корзина")
@@ -85,8 +89,16 @@ System_Boundary(nova_market, "NovaMarket"){
 System_Ext(logistic_sys, "Логистический провайдер")
 System_Ext(payment_sys, "Платежная система")
 
-'todo
-'Rel_U(logistic_service, order_service, "актуализация данных")
+Rel(purchase_history_kafka_stream, order_changes_topic, "потребляет события по заказам", "kafka")
+Rel(purchase_history_kafka_stream, payment_result_request_topic, "потребляет события по платежам", "kafka")
+Rel(purchase_history_kafka_stream, logistic_changes_topic, "потребляет события по логистики", "kafka")
+Rel(purchase_history_kafka_stream, purchase_history_db, "запись агрегированных данных по order_id")
+Rel(purchase_history_kafka_stream, purchase_history_cache, "хранение горячих данных, например заказы за месяц, список идентификаторов товаров")
+Rel(api_gateway, purchase_history_service, "просмотр истории покупок")
+Rel(purchase_history_service, purchase_history_db, "чтение истории")
+Rel(purchase_history_service, purchase_history_cache, "чтение горячих данных")
+'Rel(purchase_history_service, product_service, "поиск по словоформам или поиск похожих товаров(по тегам, просим характеристикам)")
+
 
 Rel(order_changes_producer, order_service_db, "читает изменения по заказам", "kafka", $tags="rel_transactional_outbox")
 Rel_L(order_changes_producer, order_changes_topic, "публикует изменения по заказу", "kafka", $tags="rel_transactional_outbox")
@@ -152,8 +164,6 @@ Rel(product_service, seller_notification_topic, "публикует", "kafka")
 Rel(shopping_cart_service, seller_notification_topic, "публикует", "kafka")
 Rel(seller_notification_consumer, seller_notification_topic, "потребляет(интерес покупателей, добавленные товары в корзину)", "kafka")
 
-
-Rel(seller, mobile_app, " ")
 Rel(buyer, mobile_app, " ")
 Rel(mobile_app, proxy, " ")
 Rel(proxy, api_gateway, " ")
