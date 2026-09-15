@@ -1,0 +1,161 @@
+@startuml
+title MSA-NovaMarket Container Diagram
+
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+skinparam defaultFontName Arial
+skinparam ArrowColor blue
+!pragma layout elk
+
+AddRelTag("rel_transactional_outbox", $textColor="#9933ff", $lineColor="#9933ff")
+
+Person_Ext(buyer, "Покупатель")
+
+System_Boundary(seller_system, "Система Продавца") {
+    Person_Ext(seller, "Продавец")
+}
+
+System_Boundary(nova_market, "NovaMarket"){
+    Container(ws_handler, "WebSocket Handler")
+
+    Container(user_service, "Сервис Пользователей")
+    ContainerDb(user_service_db, "Пользователи DB", "PG")
+
+    Container(api_gateway, "API Gateway")
+    Container(proxy, "NGINX")
+    Container(mobile_app, "Мобильное Приложение")
+
+    ContainerQueue(seller_notification_topic, "Топик seller_notification", "Kafka", "уведомление об интересе к продукту продавца")
+    ContainerQueue(payment_result_request_topic, "Топик payment_result_request", "Kafka", "топик для коммуникации с логистикой и продавцами")
+    ContainerQueue(logistic_changes_topic, "Топик logistic_changes", "Kafka", "логистические изменения по заказу")
+    ContainerQueue(order_changes_topic, "Топик order_changes", "Kafka", "изменения по заказу")
+
+    System_Boundary(seller_subsystem, "Подсистема Продавцы") {
+        Container(seller_service, "Сервис Продавцов")
+        ContainerDb(seller_service_db, "Продавцы DB", "PG")
+
+        Container(seller_notification_consumer, "Seller Notification Consumer")
+        Container(seller_sys_client, "Seller Client")
+        Container(seller_payment_result_consumer, "Payment Result Consumer")
+    }
+
+    System_Boundary(authn_subsystem, "AuthN") {
+        Container(keycloak, "Keycloak")
+    }
+
+    System_Boundary(product_subsystem, "Подсистема Товары") {
+        Container(product_service, "Сервис Товаров")
+        ContainerDb(product_db, "Товары DB", "PG", "отзывы и другое")
+        ContainerDb(product_document_db, "Товары Document DB", "MongoDB", "характеристики товаров")
+        ContainerDb(product_cache, "Товары Cache", "Redis", "отзывы о товаре, топ 10 товаров из категории и прочее")
+        ContainerDb(product_media_db, "Товары Media Storage", "S3", "фотографии, видео отзывы и прочее медиа")
+    }
+
+    System_Boundary(order_subsystem, "Подсистема оформления заказов") {
+        Container(order_changes_producer, "Debezium Pg Connector")
+        Container(order_service, "Сервис Оформление заказа")
+        ContainerDb(order_service_db, "Заказы DB", "PG")
+        Container(order_logistic_changes_consumer, "Logistic Changes Cons.")
+    }
+
+    System_Boundary(payment_subsystem, "Подсистема платежей") {
+        Container(payment_client, "Payment Client")
+        Container(payment_client_cache, "Payment Client Cache", "Redis")
+        Container(payment_service, "Payment Service")
+        Container(payment_request_producer, "Debezium Pg Connector")
+        Container(payment_service_db, "Платежи DB", "PG")
+    }
+
+    System_Boundary(logistic_subsystem, "Логистическая подсистема") {
+        Container(logistic_changes_producer, "Debezium Pg Connector")
+        Container(logistic_service, "Logistic Service")
+        Container(logistic_service_db, "Logistic Service DB", "PG")
+        Container(logistic_client, "Logistic Client")
+        Container(logistic_client_cache, "Logistic Client Cache", "Redis")
+        Container(logistic_payment_result_consumer, "Payment Result Consumer")
+    }
+
+    System_Boundary(purchase_history_subsystem, "Подсистема История покупок") {
+    }
+
+    Container(shopping_cart_service, "Сервис Корзина")
+    ContainerDb(shopping_cart_db, "Корзина DB", "PG")
+}
+
+System_Ext(logistic_sys, "Логистический провайдер")
+System_Ext(payment_sys, "Платежная система")
+
+'todo
+'Rel_U(logistic_service, order_service, "актуализация данных")
+
+Rel(order_changes_producer, order_service_db, "читает изменения по заказам", "kafka", $tags="rel_transactional_outbox")
+Rel_L(order_changes_producer, order_changes_topic, "публикует изменения по заказу", "kafka", $tags="rel_transactional_outbox")
+
+Rel_L(order_logistic_changes_consumer, logistic_changes_topic, "потребляет изменение по логистики", "kafka")
+Rel(order_logistic_changes_consumer, order_service_db, "обновление заказа")
+
+Rel(logistic_service, logistic_service_db, "изменения по доставки: статус, трек-номер + transactional outbox", $tags="rel_transactional_outbox")
+Rel(logistic_changes_producer, logistic_service_db, "чтение изменений по доставке", "kafka", $tags="rel_transactional_outbox")
+Rel_L(logistic_changes_producer, logistic_changes_topic, "публикует изменения по доставке", "kafka", $tags="rel_transactional_outbox")
+Rel(logistic_sys, proxy, "информация от логистического рповайдера")
+Rel(api_gateway, logistic_service, "информирование о присвоении трек-номера или смене статуса доставки")
+
+Rel_L(payment_client, ws_handler, "передача payment url в мобильное приложение")
+Rel(ws_handler, mobile_app, "сообщения от NovaMarket")
+Rel(mobile_app, payment_sys, "реквизиты и webhook(для обработки ответа в маркете)")
+Rel(payment_sys, proxy, "ответ, по оплате, на webhook")
+Rel(payment_service, payment_service_db, "записываем результат оплаты + transactional outbox", $tags="rel_transactional_outbox")
+Rel(payment_request_producer, payment_service_db, "transactional outbox(потребляет результат оплаты)", $tags="rel_transactional_outbox")
+Rel(payment_request_producer, payment_result_request_topic, "публикует ответ от платежной системы", $tags="rel_transactional_outbox")
+
+Rel(logistic_payment_result_consumer, payment_result_request_topic, "потребляет платежные результаты", "kafka")
+Rel(logistic_payment_result_consumer, logistic_client, "заявка на доставку")
+Rel(logistic_client, logistic_client_cache, "ближайшие пункты выдачи относительно адреса покупателя и прочее")
+BiRel(order_service, logistic_client, "выбор способа доставки / внесение изменений о способе доставке в заказе", "gRPC")
+Rel(logistic_client, logistic_sys, " ")
+
+Rel(payment_client, payment_client_cache, "способы оплаты")
+BiRel(order_service, payment_client, "получение способов оплаты / возврат средств - изменение в заказе", "gRPC")
+Rel(payment_client, payment_sys, "запрос Payment URL")
+
+Rel(order_service, product_service, "резервирование товаров", "gRPC")
+Rel(order_service, shopping_cart_service, "gRPC")
+Rel(order_service, ws_handler, "уведомление покупателя об изменении в заказе")
+
+Rel(order_service, order_service_db, "запись резервирования товаров + transactional outbox", $tags="rel_transactional_outbox")
+Rel(seller_payment_result_consumer, payment_result_request_topic, "потребляет платежные результаты", "kafka")
+Rel(seller_payment_result_consumer, seller_sys_client, "уведомление продавца об оплате")
+
+Rel(seller_system, proxy, "CUD для товаров и цен", "REST API")
+Rel(seller_notification_consumer, seller_sys_client, "информация для продавцов об интересах покупателей", "REST API")
+Rel(seller_sys_client, seller_system, "seller client request")
+
+Rel(api_gateway, payment_service, "ответ от платежной системы по webhook", "gRPC")
+Rel(api_gateway, order_service, "оформить заказ", "gRPC")
+Rel(api_gateway, shopping_cart_service, "добавить в корзину", "gRPC")
+Rel(shopping_cart_service, shopping_cart_db, " ")
+Rel(shopping_cart_service, product_service, "поиск/просмотр товаров", "gRPC")
+
+Rel(api_gateway, seller_service, "gRPC")
+Rel(seller_service, seller_service_db, " ")
+Rel(product_service, seller_service, "gRPC")
+
+Rel(api_gateway, product_service, "gRPC")
+Rel(user_service, keycloak, " ")
+BiRel(api_gateway, user_service, "gRPC", "authn")
+Rel(user_service, user_service_db, " ")
+Rel(product_service, product_db, " ")
+Rel(product_service, product_document_db, " ")
+Rel(product_service, product_cache, " ")
+Rel(product_service, product_media_db, " ")
+Rel(product_service, seller_notification_topic, "публикует", "kafka")
+Rel(shopping_cart_service, seller_notification_topic, "публикует", "kafka")
+Rel(seller_notification_consumer, seller_notification_topic, "потребляет(интерес покупателей, добавленные товары в корзину)", "kafka")
+
+
+Rel(seller, mobile_app, " ")
+Rel(buyer, mobile_app, " ")
+Rel(mobile_app, proxy, " ")
+Rel(proxy, api_gateway, " ")
+
+@enduml
