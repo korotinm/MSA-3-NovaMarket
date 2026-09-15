@@ -133,8 +133,6 @@ Rel(product_service, seller_notification_topic, "публикует", "kafka")
 Rel(shopping_cart_service, seller_notification_topic, "публикует", "kafka")
 Rel(seller_notification_consumer, seller_notification_topic, "потребляет(интерес покупателей, добавленные товары в корзину)", "kafka")
 
-
-Rel(seller, mobile_app, " ")
 Rel(buyer, mobile_app, " ")
 Rel(mobile_app, proxy, " ")
 Rel(proxy, api_gateway, " ")
