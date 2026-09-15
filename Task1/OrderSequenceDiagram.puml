@@ -96,7 +96,7 @@ LogisticPaymentResultConsumer --> OrderNotificationRequestTopic: чтение и
 LogisticPaymentResultConsumer --> LogisticClient
 LogisticClient --> LogisticProvider
 alt DeliveryRequestSucceeded
-    LogisticProvider --> LogisticClient: заявка на доставку подтверждена
+    LogisticProvider --> LogisticClient: заявка на доставку подтверждена, присвоен трек-номер
 else DeliveryRequestFailed
     LogisticProvider --> LogisticClient: ошибка, возможно пункт выдачи закрылся
     LogisticClient --> OrderService
