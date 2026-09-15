@@ -41,12 +41,12 @@ System_Boundary(nova_market, "NovaMarket"){
         Container(keycloak, "Keycloak")
     }
 
-    System_Boundary(goods_subsystem, "Подсистема Товары") {
-        Container(goods_service, "Сервис Товаров")
-        ContainerDb(goods_db, "Товары DB", "PG", "отзывы и другое")
-        ContainerDb(goods_document_db, "Товары Document DB", "MongoDB", "характеристики товаров")
-        ContainerDb(goods_cache, "Товары Cache", "Redis", "отзывы о товаре, топ 10 товаров из категории и прочее")
-        ContainerDb(goods_media, "Товары Media Storage", "S3", "фотографии, видео отзывы и прочее медиа")
+    System_Boundary(product_subsystem, "Подсистема Товары") {
+        Container(product_service, "Сервис Товаров")
+        ContainerDb(product_db, "Товары DB", "PG", "отзывы и другое")
+        ContainerDb(product_document_db, "Товары Document DB", "MongoDB", "характеристики товаров")
+        ContainerDb(product_cache, "Товары Cache", "Redis", "отзывы о товаре, топ 10 товаров из категории и прочее")
+        ContainerDb(product_media_db, "Товары Media Storage", "S3", "фотографии, видео отзывы и прочее медиа")
     }
 
     System_Boundary(order_subsystem, "Подсистема оформления заказов") {
@@ -93,7 +93,7 @@ Rel(payment_client, payment_client_cache, "способы оплаты")
 BiRel(order_service, payment_client, "получение способов оплаты / возврат средств - изменение в заказе", "gRPC")
 Rel(payment_client, payment_sys, "запрос Payment URL")
 
-Rel(order_service, goods_service, "резервирование товаров", "gRPC")
+Rel(order_service, product_service, "резервирование товаров", "gRPC")
 Rel(order_service, shopping_cart_service, "gRPC")
 Rel(order_service, ws_handler, "уведомление покупателя об изменении в заказе")
 
@@ -109,21 +109,21 @@ Rel(api_gateway, payment_service, "ответ от платежной систе
 Rel(api_gateway, order_service, "оформить заказ", "gRPC")
 Rel(api_gateway, shopping_cart_service, "добавить в корзину", "gRPC")
 Rel(shopping_cart_service, shopping_cart_db, " ")
-Rel(shopping_cart_service, goods_service, "поиск/просмотр товаров", "gRPC")
+Rel(shopping_cart_service, product_service, "поиск/просмотр товаров", "gRPC")
 
 Rel(api_gateway, seller_service, "gRPC")
 Rel(seller_service, seller_service_db, " ")
-Rel(goods_service, seller_service, "gRPC")
+Rel(product_service, seller_service, "gRPC")
 
-Rel(api_gateway, goods_service, "gRPC")
+Rel(api_gateway, product_service, "gRPC")
 Rel(user_service, keycloak, " ")
 BiRel(api_gateway, user_service, "gRPC", "authn")
 Rel(user_service, user_service_db, " ")
-Rel(goods_service, goods_db, " ")
-Rel(goods_service, goods_document_db, " ")
-Rel(goods_service, goods_cache, " ")
-Rel(goods_service, goods_media, " ")
-Rel(goods_service, seller_notification_topic, "публикует", "kafka")
+Rel(product_service, product_db, " ")
+Rel(product_service, product_document_db, " ")
+Rel(product_service, product_cache, " ")
+Rel(product_service, product_media_db, " ")
+Rel(product_service, seller_notification_topic, "публикует", "kafka")
 Rel(shopping_cart_service, seller_notification_topic, "публикует", "kafka")
 Rel(seller_notification_consumer, seller_notification_topic, "потребляет(интерес покупателей, добавленные товары в корзину)", "kafka")
 
