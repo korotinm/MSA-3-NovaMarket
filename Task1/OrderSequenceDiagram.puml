@@ -1,0 +1,107 @@
+@startuml
+
+actor Buyer
+participant MobileApp
+participant OrderService
+database OrderServiceDb
+participant ShoppingCartService
+participant LogisticClient
+participant LogisticProvider #aaaaaa
+participant PaymentClient
+participant PaymentService
+participant PaymentCDC
+database PaymentServiceDb
+participant PaymentSystem #aaaaaa
+participant ProductService
+participant SellerClient
+participant SellerSystem #aaaaaa
+participant ApiGateway
+queue OrderNotificationRequestTopic
+participant SellerPaymentResultConsumer
+participant LogisticPaymentResultConsumer
+
+
+Buyer --> MobileApp: раздел оформление заказов
+MobileApp --> OrderService
+
+OrderService --> ShoppingCartService: получение списка товаров для оформления
+OrderService --> PaymentClient: выбор способа оплаты
+PaymentClient --> PaymentSystem
+alt PaymentMethodSucceeded case
+    PaymentSystem --> PaymentClient: успех
+    PaymentClient --> OrderService: успешно выбран способ оплаты
+else  PaymentMethodFailed
+    PaymentSystem --> PaymentClient: ошибка
+    PaymentClient --> OrderService: ошибка в выборе способа оплаты
+    OrderService --> OrderService: смена способа оплаты
+end
+
+OrderService --> LogisticClient: выбор способа доставки
+alt DeliveryMethodSucceeded case
+    LogisticClient --> OrderService: выбран способ доставки
+else  DeliveryMethodFailed
+    LogisticClient --> OrderService: ошибка при выборе способа доставки
+    OrderService --> OrderService: смена способа доставки
+end
+
+OrderService --> ProductService: резервирование товаров
+alt ReservationSucceeded
+    ProductService --> OrderService: успешное резервирование
+    OrderService --> OrderServiceDb: формируем заказ
+else ReservationFailed
+    ProductService --> OrderService: ошибка резервирования
+    ShoppingCartService --> MobileApp: редактирование корзины
+else ReservationTimeout
+    ProductService --> OrderService: время резервирование истекло
+    OrderService --> ProductService: повторная попытка резервирования
+end
+
+OrderService --> PaymentClient: запрос payment url
+PaymentClient --> PaymentSystem: запрос payment url
+alt PaymentUrlReceived
+    PaymentSystem --> PaymentClient: возврат payment url
+    PaymentClient --> MobileApp: передача payment url
+else PaymentUrlFailed
+    PaymentSystem --> PaymentClient: ошибка
+    PaymentClient  --> MobileApp: перейти в заказ и повторить попытку
+end
+
+MobileApp --> PaymentSystem: переход на страницу платежей (передача реквизитов + webhook)
+alt PaymentDataRequestSucceeded
+    PaymentSystem --> MobileApp: оплата прошла успешно
+else PaymentDataRequestFailed
+    PaymentSystem --> MobileApp: ошибка
+    MobileApp --> PaymentSystem: повторить попытку
+end
+
+PaymentSystem --> ApiGateway: оповещение об успешной оплате
+ApiGateway --> PaymentService: ответ от платежной системы
+PaymentService --> PaymentServiceDb: отметка о платеже
+PaymentCDC --> PaymentServiceDb: чтение платежной информации
+PaymentCDC --> OrderNotificationRequestTopic: запись платежной информации в топик
+
+SellerPaymentResultConsumer --> OrderNotificationRequestTopic: чтение информации об оплате заказа
+SellerPaymentResultConsumer --> SellerClient
+SellerClient --> SellerSystem: резервирование на складе
+alt NotificationSellerPaymentSucceeded
+    SellerSystem --> SellerClient: продавец уведомлен - начал подготовку товара
+else NotificationSellerPaymentFailed
+    SellerSystem --> SellerClient: продавец уведомлен - произошла ошибка, возможно товар отсутствует
+    SellerClient --> PaymentClient: возврат средств за отсутствующий товар
+    SellerClient --> OrderService: внесение изменений в заказ
+    OrderService --> MobileApp: уведомление покупателя
+end
+
+LogisticPaymentResultConsumer --> OrderNotificationRequestTopic: чтение информации об оплате заказа
+LogisticPaymentResultConsumer --> LogisticClient
+LogisticClient --> LogisticProvider
+alt DeliveryRequestSucceeded
+    LogisticProvider --> LogisticClient: заявка на доставку подтверждена, присвоен трек-номер
+else DeliveryRequestFailed
+    LogisticProvider --> LogisticClient: ошибка, возможно пункт выдачи закрылся
+    LogisticClient --> OrderService
+    OrderService --> OrderServiceDb: отметка о проблеме с доставкой
+    OrderService --> MobileApp: уведомление покупателя
+end
+
+@enduml
